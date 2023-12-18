@@ -1,5 +1,5 @@
 import json
-
+import random
 import pygame
 
 AUTOTILE_MAP = {
@@ -15,15 +15,57 @@ AUTOTILE_MAP = {
 }
 
 NEIGHBOR_OFFSETS = [
-    (-3, 3), (-2, 3), (-1, 3), (0, 3), (1, 3), (2, 3), (3, 3),
-    (-3, 2), (-2, 2), (-1, 2), (0, 2), (1, 2), (2, 2), (3, 2),
-    (-3, 1), (-2, 1), (-1, 1), (0, 1), (1, 1), (2, 1), (3, 1),
-    (-3, 0), (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0), (3, 0),
-    (-3, -1), (-2, -1), (-1, -1), (0, -1), (1, -1), (2, -1), (3, -1),
-    (-3, -2), (-2, -2), (-1, -2), (0, -2), (1, -2), (2, -2), (3, -2),
-    (-3, -3), (-2, -3), (-1, -3), (0, -3), (1, -3), (2, -3), (3, -3)
+    (-3, 3),
+    (-2, 3),
+    (-1, 3),
+    (0, 3),
+    (1, 3),
+    (2, 3),
+    (3, 3),
+    (-3, 2),
+    (-2, 2),
+    (-1, 2),
+    (0, 2),
+    (1, 2),
+    (2, 2),
+    (3, 2),
+    (-3, 1),
+    (-2, 1),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+    (2, 1),
+    (3, 1),
+    (-3, 0),
+    (-2, 0),
+    (-1, 0),
+    (0, 0),
+    (1, 0),
+    (2, 0),
+    (3, 0),
+    (-3, -1),
+    (-2, -1),
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (2, -1),
+    (3, -1),
+    (-3, -2),
+    (-2, -2),
+    (-1, -2),
+    (0, -2),
+    (1, -2),
+    (2, -2),
+    (3, -2),
+    (-3, -3),
+    (-2, -3),
+    (-1, -3),
+    (0, -3),
+    (1, -3),
+    (2, -3),
+    (3, -3),
 ]
-PHYSICS_TILES = {"grass", "stone"}
+PHYSICS_TILES = {"grass", "stone", "wall", "jump_pad", "block"}
 AUTOTILE_TYPES = {"grass", "stone"}
 
 
@@ -57,7 +99,11 @@ class Tilemap:
     def tiles_around(self, pos):
         tiles = []
         tile_loc = (int(pos[0] // self.tile_size), int(pos[1] // self.tile_size))
-        for offset in NEIGHBOR_OFFSETS: # warning: breaks on entity enlargement. NEIGHBOR_OFFSETS must be adjusted
+        for (
+            offset
+        ) in (
+            NEIGHBOR_OFFSETS
+        ):  # warning: breaks on entity enlargement. NEIGHBOR_OFFSETS must be adjusted
             check_loc = (
                 str(tile_loc[0] + offset[0]) + ";" + str(tile_loc[1] + offset[1])
             )
@@ -86,6 +132,15 @@ class Tilemap:
         self.tile_size = map_data["tile_size"]
         self.offgrid_tiles = map_data["offgrid"]
 
+        for tile_loc in self.tilemap:
+            self.tilemap[tile_loc]["blockShake"] = 0
+            self.tilemap[tile_loc]["falling"] = 0
+            if self.tilemap[tile_loc]["type"] == "wall":
+                if self.tilemap[tile_loc]["variant"] == 0:
+                    self.tilemap[tile_loc]["health"] = 5
+                else:
+                    self.tilemap[tile_loc]["health"] = 1
+
     def solid_check(self, pos):
         tile_loc = (
             str(int(pos[0] // self.tile_size))
@@ -95,6 +150,56 @@ class Tilemap:
         if tile_loc in self.tilemap:
             if self.tilemap[tile_loc]["type"] in PHYSICS_TILES:
                 return self.tilemap[tile_loc]
+
+    def block_check(self, player):
+        keys_to_delete = []
+        for tile_loc in self.tilemap:
+            if (
+                self.tilemap[tile_loc]["type"] == "block"
+                and self.tilemap[tile_loc]["falling"] > 0
+            ):
+                self.tilemap[tile_loc]["falling"] += 1
+                if self.tilemap[tile_loc]["falling"] > 10:
+                    self.tilemap[tile_loc]["pos"][1] += (
+                        self.tilemap[tile_loc]["falling"] / 500
+                    )
+            if self.tilemap[tile_loc]["falling"] > 300:
+                keys_to_delete.append(tile_loc)
+
+        for key in keys_to_delete:
+            del self.tilemap[key]
+                
+        tile_loc = (
+            str(int(player.pos[0] // self.tile_size))
+            + ";"
+            + str(int(player.pos[1] // self.tile_size + 1))
+        )
+        player_rect = player.rect()
+        if tile_loc in self.tilemap:
+            if self.tilemap[tile_loc]["type"] == "block":
+                if (
+                    player_rect.bottom >= self.tilemap[tile_loc]["pos"][1]
+                    and self.tilemap[tile_loc]["falling"] == 0
+                ):
+                    self.tilemap[tile_loc]["falling"] = 1
+
+    def wall_check(self, pos, speed):
+        tile_loc = (
+            str(int(pos[0] // self.tile_size))
+            + ";"
+            + str(int(pos[1] // self.tile_size))
+        )
+        if tile_loc in self.tilemap:
+            if self.tilemap[tile_loc]["type"] == "wall":
+                self.tilemap[tile_loc]["health"] -= 1
+                self.tilemap[tile_loc]["pos"][0] += 0.01
+                if speed[0] > 1:
+                    self.tilemap[tile_loc]["blockShake"] = 60
+                else:
+                    self.tilemap[tile_loc]["blockShake"] = -60
+                if self.tilemap[tile_loc]["health"] == 0:
+                    del self.tilemap[tile_loc]
+                return tile_loc
 
     def physics_rects_around(self, pos):
         rects = []
@@ -144,26 +249,30 @@ class Tilemap:
             ):
                 loc = str(x) + ";" + str(y)
                 if loc in self.tilemap:
+                    if self.tilemap[loc]["blockShake"] > 0:
+                        self.tilemap[loc]["blockShake"] -= 1
+                    elif self.tilemap[loc]["blockShake"] < 0:
+                        self.tilemap[loc]["blockShake"] += 1
+
+                    blockShake = self.tilemap[loc]["blockShake"]
                     tile = self.tilemap[loc]
                     surf.blit(
                         self.game.assets[tile["type"]][tile["variant"]],
                         (
-                            tile["pos"][0] * self.tile_size - offset[0],
+                            tile["pos"][0] * self.tile_size
+                            - offset[0]
+                            + blockShake / 30,
                             tile["pos"][1] * self.tile_size - offset[1],
                         ),
                     )
 
     def find_lowest_block_position(self):
-        lowest_y = float('-inf')  # Initialize to negative infinity to ensure the first tile position will be selected.
+        lowest_y = float("-inf")
         lowest_block_position = None
 
         for tile in self.tilemap:
-            # Extract the Y-coordinate (bottom position) of the tile
             tile_y = self.tilemap[tile]["pos"][1]
-
-            # Compare with the current lowest Y-coordinate
             if tile_y > lowest_y:
                 lowest_y = tile_y
                 lowest_block_position = self.tilemap[tile]["pos"]
-            # print('lowest block:', lowest_block_position)
         return lowest_block_position

@@ -1,5 +1,5 @@
 import sys
-
+import os
 import pygame
 
 from scripts.utils import load_images
@@ -21,10 +21,23 @@ class Editor:
         self.assets = {
             "decor": load_images("tiles/decor"),
             "grass": load_images("tiles/grass"),
+            "wall": load_images("tiles/wall"),
             "large_decor": load_images("tiles/large_decor"),
             "stone": load_images("tiles/stone"),
             "spawners": load_images("tiles/spawners"),
+            "jump_pad": load_images("tiles/jump_pad"),
+            "lever": load_images("tiles/lever", 1),
+            "block": load_images("tiles/block"),
         }
+
+        for i in range(len(self.assets["jump_pad"])):
+            self.assets["jump_pad"][i] = pygame.transform.scale(
+                self.assets["jump_pad"][i], [16, 16]
+            )
+        for i in range(len(self.assets["lever"])):
+            self.assets["lever"][i] = pygame.transform.scale(
+                self.assets["lever"][i], [16, 16]
+            )
 
         self.movement = [False, False, False, False]
 
@@ -46,9 +59,48 @@ class Editor:
         self.shift = False
         self.ongrid = True
 
+    def get_map_list(self):
+        map_list = []
+        for filename in os.listdir():
+            if filename.endswith(".json") and not filename.endswith("_temp.json"):
+                map_list.append(filename)
+        return map_list
+
+    def save_current_map(self, map_name):
+        temp_filename = map_name.replace(".json", "_temp.json")
+        self.tilemap.save(temp_filename)
+        print(f"Saved {temp_filename}")
+
+    def load_map(self, map_name):
+        map_file = map_name
+        temp_filename = map_name.replace(".json", "_temp.json")
+
+        if os.path.exists(temp_filename):
+            self.tilemap.load(temp_filename)
+            print(f"Loaded {temp_filename}")
+        else:
+            self.tilemap.load(map_file)
+            print(f"Loaded {map_file}")
+
+    def cleanup_temp_files(self):
+        map_files = os.listdir()
+        for map_file in map_files:
+            if map_file.endswith("_temp.json"):
+                os.remove(map_file)
+
     def run(self):
+        map_list = self.get_map_list()
+        selected_map_index = 0
+        current_map = None
+
         while True:
             self.display.fill((0, 0, 0))
+
+            if current_map is None:
+                current_map = map_list[selected_map_index]
+                self.load_map(current_map)
+                self.scroll[0] = 0
+                self.scroll[1] = 0
 
             self.scroll[0] += (self.movement[1] - self.movement[0]) * 2
             self.scroll[1] += (self.movement[3] - self.movement[2]) * 2
@@ -84,6 +136,7 @@ class Editor:
                     "type": self.tile_list[self.tile_group],
                     "variant": self.tile_variant,
                     "pos": tile_pos,
+                    "blockShake": 0,
                 }
             if self.right_clicking:
                 tile_loc = str(tile_pos[0]) + ";" + str(tile_pos[1])
@@ -104,6 +157,7 @@ class Editor:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    self.cleanup_temp_files()
                     pygame.quit()
                     sys.exit()
 
@@ -163,7 +217,7 @@ class Editor:
                     if event.key == pygame.K_t:
                         self.tilemap.autotile()
                     if event.key == pygame.K_o:
-                        self.tilemap.save("map.json")
+                        self.tilemap.save(current_map)
                     if event.key == pygame.K_LSHIFT:
                         self.shift = True
                 if event.type == pygame.KEYUP:
@@ -177,6 +231,25 @@ class Editor:
                         self.movement[3] = False
                     if event.key == pygame.K_LSHIFT:
                         self.shift = False
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        self.save_current_map(current_map)
+                        selected_map_index = (selected_map_index - 1) % len(map_list)
+                        current_map = None
+                    elif event.key == pygame.K_DOWN:
+                        self.save_current_map(current_map)
+                        selected_map_index = (selected_map_index + 1) % len(map_list)
+                        current_map = None
+
+            for idx, map_filename in enumerate(map_list):
+                color = (255, 255, 255)
+                if idx == selected_map_index:
+                    color = (0, 255, 0)
+                map_label = pygame.font.Font(None, 10).render(map_filename, True, color)
+                label_x = self.display.get_width() - map_label.get_width() - 10
+                label_y = 30 + idx * 10
+                self.display.blit(map_label, (label_x, label_y))
 
             self.screen.blit(
                 pygame.transform.scale(self.display, self.screen.get_size()), (0, 0)
